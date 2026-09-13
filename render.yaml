@@ -1,0 +1,58 @@
+services:
+  - type: web
+    name: streamo-web
+    runtime: node
+    plan: free
+    region: frankfurt
+    buildCommand: npm ci && npx prisma generate && npm run build
+    startCommand: npx prisma migrate deploy && npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: INTERNAL_API_SECRET
+        generateValue: true
+      - key: NEXT_PUBLIC_APP_URL
+        fromService:
+          name: streamo-web
+          type: web
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: SIGNALING_PUBLIC_URL
+        fromService:
+          name: streamo-signaling
+          type: web
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: NEXT_PUBLIC_SIGNALING_URL
+        fromService:
+          name: streamo-signaling
+          type: web
+          envVarKey: RENDER_EXTERNAL_URL
+
+  - type: web
+    name: streamo-signaling
+    runtime: node
+    plan: free
+    region: frankfurt
+    buildCommand: npm ci
+    startCommand: npm run signaling
+    healthCheckPath: /
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: INTERNAL_API_SECRET
+        fromService:
+          name: streamo-web
+          type: web
+          envVarKey: INTERNAL_API_SECRET
+      - key: NEXT_PUBLIC_APP_URL
+        fromService:
+          name: streamo-web
+          type: web
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: CORS_ORIGINS
+        fromService:
+          name: streamo-web
+          type: web
+          envVarKey: RENDER_EXTERNAL_URL

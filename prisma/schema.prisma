@@ -1,0 +1,32 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum StreamType {
+  live_camera
+  file
+}
+
+model Stream {
+  id             String     @id @default(cuid())
+  title          String
+  streamerName   String     @map("streamer_name")
+  streamType     StreamType @map("stream_type")
+  hasVideo       Boolean    @map("has_video")
+  hasAudio       Boolean    @map("has_audio")
+  isLive         Boolean    @default(false) @map("is_live")
+  viewerCount    Int        @default(0) @map("viewer_count")
+  scheduledAt    DateTime?  @map("scheduled_at")
+  ownerTokenHash String     @map("owner_token_hash")
+  endedAt        DateTime?  @map("ended_at")
+  createdAt      DateTime   @default(now()) @map("created_at")
+
+  @@index([isLive, createdAt])
+  @@index([scheduledAt])
+  @@map("streams")
+}
