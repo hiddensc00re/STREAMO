@@ -6,6 +6,7 @@ import { secretsEqual } from "@/lib/secrets";
 import { updateStreamSchema } from "@/lib/media";
 import { toPublicStream } from "@/lib/stream-mapper";
 import { SlidingWindowLimiter } from "@/lib/rate-limit";
+import { safeParseRequestBody } from "@/lib/safe-fetch";
 
 export const dynamic = "force-dynamic";
 
@@ -45,10 +46,8 @@ export async function PATCH(request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Stream not found." }, { status: 404 });
   }
 
-  let json: unknown;
-  try {
-    json = await request.json();
-  } catch {
+  const json = await safeParseRequestBody(request);
+  if (!json) {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
 

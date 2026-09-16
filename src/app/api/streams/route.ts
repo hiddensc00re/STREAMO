@@ -9,6 +9,7 @@ import {
 } from "@/lib/media";
 import { SlidingWindowLimiter } from "@/lib/rate-limit";
 import { toPublicStream } from "@/lib/stream-mapper";
+import { safeParseRequestBody } from "@/lib/safe-fetch";
 
 export const dynamic = "force-dynamic";
 
@@ -45,10 +46,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Too many streams created. Try again shortly." }, { status: 429 });
   }
 
-  let json: unknown;
-  try {
-    json = await request.json();
-  } catch {
+  const json = await safeParseRequestBody(request);
+  if (!json) {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
 

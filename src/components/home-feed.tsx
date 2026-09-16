@@ -6,6 +6,7 @@ import type { PublicStream } from "@/lib/types";
 import { StreamCard } from "@/components/stream-card";
 import { StartEventModal } from "@/components/start-event-modal";
 import { StartStreamFab } from "@/components/start-stream-fab";
+import { safeParseJson } from "@/lib/safe-fetch";
 
 export function HomeFeed() {
   const [streams, setStreams] = useState<PublicStream[]>([]);
@@ -15,9 +16,9 @@ export function HomeFeed() {
   const refresh = useCallback(async () => {
     try {
       const response = await fetch("/api/streams", { cache: "no-store" });
-      const body = (await response.json()) as { streams?: PublicStream[]; error?: string };
-      if (!response.ok) {
-        throw new Error(body.error ?? "Could not load streams.");
+      const body = await safeParseJson<{ streams?: PublicStream[]; error?: string }>(response);
+      if (!response.ok || !body) {
+        throw new Error(body?.error ?? "Could not load streams.");
       }
       setStreams(body.streams ?? []);
       setError(null);

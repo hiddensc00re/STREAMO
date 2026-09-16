@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { CalendarClock, Upload, Video, X } from "lucide-react";
 import { DISPLAY_NAME_KEY, OWNER_TOKEN_STORAGE_PREFIX, type CreateStreamResponse } from "@/lib/types";
 import { STREAM_TITLE_MAX, STREAMER_NAME_MAX } from "@/lib/media";
+import { safeParseJson } from "@/lib/safe-fetch";
 
 type Props = {
   open: boolean;
@@ -54,9 +55,9 @@ export function StartEventModal({ open, onClose }: Props) {
           scheduledAt: scheduleEnabled && scheduledAt ? new Date(scheduledAt).toISOString() : null,
         }),
       });
-      const body = (await response.json()) as CreateStreamResponse & { error?: string };
-      if (!response.ok) {
-        throw new Error(body.error ?? "Could not create the event.");
+      const body = await safeParseJson<CreateStreamResponse & { error?: string }>(response);
+      if (!response.ok || !body) {
+        throw new Error(body?.error ?? "Could not create the event.");
       }
       localStorage.setItem(DISPLAY_NAME_KEY, streamerName.trim());
       localStorage.setItem(`${OWNER_TOKEN_STORAGE_PREFIX}${body.id}`, body.ownerToken);

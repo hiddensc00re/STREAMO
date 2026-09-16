@@ -12,6 +12,7 @@ import {
 } from "@/lib/media-client";
 import { OWNER_TOKEN_STORAGE_PREFIX, type PublicStream } from "@/lib/types";
 import { RESOLUTION_PRESETS, type ResolutionPreset } from "@/lib/media";
+import { safeParseJson } from "@/lib/safe-fetch";
 
 export function CreatorStudio({ streamId }: { streamId: string }) {
   const [stream, setStream] = useState<PublicStream | null>(null);
@@ -39,11 +40,11 @@ export function CreatorStudio({ streamId }: { streamId: string }) {
   useEffect(() => {
     void fetch(`/api/streams/${streamId}`)
       .then(async (response) => {
-        const body = await response.json();
-        if (!response.ok) {
-          throw new Error(body.error ?? "Stream not found.");
+        const body = await safeParseJson<PublicStream & { error?: string }>(response);
+        if (!response.ok || !body) {
+          throw new Error(body?.error ?? "Stream not found.");
         }
-        setStream(body as PublicStream);
+        setStream(body);
       })
       .catch((error: unknown) => {
         setLoadError(error instanceof Error ? error.message : "Stream not found.");

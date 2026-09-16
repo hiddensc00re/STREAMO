@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Headphones, Volume2, VolumeX, Users } from "lucide-react";
 import { useViewerPeer } from "@/hooks/use-viewer-peer";
 import type { PublicStream } from "@/lib/types";
+import { safeParseJson } from "@/lib/safe-fetch";
 
 export function ViewerStage({ streamId }: { streamId: string }) {
   const [stream, setStream] = useState<PublicStream | null>(null);
@@ -18,11 +19,11 @@ export function ViewerStage({ streamId }: { streamId: string }) {
   useEffect(() => {
     void fetch(`/api/streams/${streamId}`)
       .then(async (response) => {
-        const body = await response.json();
-        if (!response.ok) {
-          throw new Error(body.error ?? "Stream not found.");
+        const body = await safeParseJson<PublicStream & { error?: string }>(response);
+        if (!response.ok || !body) {
+          throw new Error(body?.error ?? "Stream not found.");
         }
-        setStream(body as PublicStream);
+        setStream(body);
       })
       .catch((err: unknown) => {
         setLoadError(err instanceof Error ? err.message : "Stream not found.");

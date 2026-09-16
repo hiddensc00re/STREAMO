@@ -1,6 +1,7 @@
 "use client";
 
 import { io, type Socket } from "socket.io-client";
+import { safeParseJson } from "@/lib/safe-fetch";
 
 let socket: Socket | null = null;
 let socketPromise: Promise<Socket> | null = null;
@@ -19,8 +20,8 @@ export async function getSocket(): Promise<Socket> {
       try {
         const response = await fetch("/api/config", { cache: "no-store" });
         if (response.ok) {
-          const body = (await response.json()) as { signalingUrl?: string };
-          if (body.signalingUrl) {
+          const body = await safeParseJson<{ signalingUrl?: string }>(response);
+          if (body?.signalingUrl) {
             signalingUrl = body.signalingUrl;
           }
         }
