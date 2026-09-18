@@ -13,8 +13,17 @@ export function ViewerStage({ streamId }: { streamId: string }) {
   const [muted, setMuted] = useState(false);
   const [volume, setVolume] = useState(1);
   const videoRef = useRef<HTMLVideoElement>(null);
-  const { remoteStream, viewerCount, audioOnly, setAudioOnly, paused, ended, error } =
-    useViewerPeer(streamId);
+  const {
+    remoteStream,
+    viewerCount,
+    audioOnly,
+    setAudioOnly,
+    paused,
+    ended,
+    error,
+    connectionState,
+    retry,
+  } = useViewerPeer(streamId, stream?.isLive === true);
 
   const refreshStream = useCallback(async () => {
     try {
@@ -98,11 +107,28 @@ export function ViewerStage({ streamId }: { streamId: string }) {
         {!remoteStream && !audioOnly && !ended ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-[#0b0d14] px-6 text-center">
             <p className="text-xl font-semibold text-white">
-              {stream?.isLive ? "Connecting to the live stream…" : "Waiting for the creator"}
+              {connectionState === "failed" && stream?.isLive
+                ? "Could not connect to the live stream"
+                : stream?.isLive
+                  ? connectionState === "retrying"
+                    ? "Retrying the live connection…"
+                    : "Connecting to the live stream…"
+                  : "Waiting for the creator"}
             </p>
             <p className="max-w-md text-sm text-zinc-400">
-              Keep this page open. The broadcast will appear here as soon as it starts.
+              {connectionState === "failed" && stream?.isLive
+                ? "The event is live, but this device could not complete the media connection."
+                : "Keep this page open. The broadcast will appear here as soon as it starts."}
             </p>
+            {connectionState === "failed" && stream?.isLive ? (
+              <button
+                type="button"
+                onClick={retry}
+                className="mt-3 inline-flex min-h-11 items-center rounded-full bg-amber-400 px-5 font-semibold text-black"
+              >
+                Try again
+              </button>
+            ) : null}
           </div>
         ) : null}
         {paused && !ended ? (
