@@ -42,6 +42,15 @@ const rooms = new Map<
     viewers: Map<string, string>;
   }
 >();
+const hostDisconnectTimers = new Map<string, NodeJS.Timeout>();
+
+function cancelHostDisconnectTimer(streamId: string) {
+  const timer = hostDisconnectTimers.get(streamId);
+  if (timer) {
+    clearTimeout(timer);
+    hostDisconnectTimers.delete(streamId);
+  }
+}
 
 function getRoom(streamId: string) {
   let room = rooms.get(streamId);
@@ -154,6 +163,7 @@ io.on("connection", (socket) => {
     }
 
     const room = getRoom(streamId);
+    cancelHostDisconnectTimer(streamId);
     if (room.hostSocketId && room.hostSocketId !== socket.id) {
       io.to(room.hostSocketId).emit("host-replaced");
     }
@@ -247,6 +257,7 @@ io.on("connection", (socket) => {
     }
     io.to(`stream:${streamId}`).emit("stream-ended", { streamId });
     io.to("lobby").emit("stream-ended", { streamId });
+    cancelHostDisconnectTimer(streamId);
     await persistViewerCount(streamId, 0, false);
     rooms.delete(streamId);
   });
@@ -270,6 +281,19 @@ function cleanupSocket(socketId: string, data: SocketData) {
     room.hostSocketId = undefined;
     io.to(`stream:${streamId}`).emit("host-disconnected");
     io.to("lobby").emit("host-disconnected", { streamId });
+    cancelHostDisconnectTimer(streamId);
+    const timer = setTimeout(() => {
+      hostDisconnectTimers.delete(streamId);
+      const currentRoom = rooms.get(streamId);
+      if (currentRoom?.hostSocketId) {
+        return;
+      }
+      io.to(`stream:${streamId}`).emit("stream-ended", { streamId });
+      io.to("lobby").emit("stream-ended", { streamId });
+      void persistViewerCount(streamId, 0, false);
+      rooms.delete(streamId);
+    }, 15_000);
+    hostDisconnectTimers.set(streamId, timer);
   }
 
   if (data.role === "viewer" && data.sessionId) {
@@ -282,7 +306,7 @@ function cleanupSocket(socketId: string, data: SocketData) {
     }
   }
 
-  if (!room.hostSocketId && room.viewers.size === 0) {
+  if (!room.hostSocketId && room.viewers.size === 0 && !hostDisconnectTimers.has(streamId)) {
     rooms.delete(streamId);
   }
 }
