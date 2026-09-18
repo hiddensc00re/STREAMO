@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Headphones, Volume2, VolumeX, Users } from "lucide-react";
 import { useViewerPeer } from "@/hooks/use-viewer-peer";
@@ -16,19 +16,35 @@ export function ViewerStage({ streamId }: { streamId: string }) {
   const { remoteStream, viewerCount, audioOnly, setAudioOnly, paused, ended, error } =
     useViewerPeer(streamId);
 
-  useEffect(() => {
-    void fetch(`/api/streams/${streamId}`)
-      .then(async (response) => {
-        const body = await safeParseJson<PublicStream & { error?: string }>(response);
-        if (!response.ok || !body) {
-          throw new Error(body?.error ?? "Stream not found.");
-        }
-        setStream(body);
-      })
-      .catch((err: unknown) => {
-        setLoadError(err instanceof Error ? err.message : "Stream not found.");
-      });
+  const refreshStream = useCallback(async () => {
+    try {
+      const response = await fetch(`/api/streams/${streamId}`, { cache: "no-store" });
+      const body = await safeParseJson<PublicStream & { error?: string }>(response);
+      if (!response.ok || !body) {
+        throw new Error(body?.error ?? "Stream not found.");
+      }
+      setStream(body);
+      setLoadError(null);
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : "Stream not found.");
+    }
   }, [streamId]);
+
+  useEffect(() => {
+    const initial = window.setTimeout(() => void refreshStream(), 0);
+    const timer = window.setInterval(() => void refreshStream(), 8000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") {
+        void refreshStream();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.clearTimeout(initial);
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [refreshStream]);
 
   useEffect(() => {
     const node = videoRef.current;
@@ -79,6 +95,16 @@ export function ViewerStage({ streamId }: { streamId: string }) {
             </p>
           </div>
         ) : null}
+        {!remoteStream && !audioOnly && !ended ? (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-[#0b0d14] px-6 text-center">
+            <p className="text-xl font-semibold text-white">
+              {stream?.isLive ? "Connecting to the live stream…" : "Waiting for the creator"}
+            </p>
+            <p className="max-w-md text-sm text-zinc-400">
+              Keep this page open. The broadcast will appear here as soon as it starts.
+            </p>
+          </div>
+        ) : null}
         {paused && !ended ? (
           <div className="absolute inset-0 flex items-center justify-center bg-black/60 text-xl font-semibold text-white">
             Stream paused
@@ -96,7 +122,7 @@ export function ViewerStage({ streamId }: { streamId: string }) {
         <div className="pointer-events-none absolute left-3 top-3 right-3 flex items-start justify-between gap-3">
           <div className="pointer-events-auto rounded-2xl bg-black/65 px-4 py-3 text-white backdrop-blur">
             <p className="text-xs uppercase tracking-[0.16em] text-amber-300">
-              {stream?.isLive ? "Live" : "Waiting"}
+              {stream?.isLive || remoteStream ? "Live" : "Waiting"}
             </p>
             <h1 className="text-lg font-semibold">{stream?.title ?? "Loading…"}</h1>
             <p className="text-sm text-zinc-300">{stream?.streamerName}</p>

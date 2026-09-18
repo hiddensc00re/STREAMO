@@ -10,6 +10,7 @@ import { safeParseJson } from "@/lib/safe-fetch";
 
 export function HomeFeed() {
   const [streams, setStreams] = useState<PublicStream[]>([]);
+  const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
 
@@ -21,6 +22,7 @@ export function HomeFeed() {
         throw new Error(body?.error ?? "Could not load streams.");
       }
       setStreams(body.streams ?? []);
+      setLoaded(true);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load streams.");
@@ -30,6 +32,7 @@ export function HomeFeed() {
   useEffect(() => {
     let cancelled = false;
     let socket: Awaited<ReturnType<typeof getSocket>> | undefined;
+    let joinLobby: (() => void) | undefined;
     const onCount = ({ streamId, viewerCount }: { streamId: string; viewerCount: number }) => {
       setStreams((current) =>
         current.map((stream) => (stream.id === streamId ? { ...stream, viewerCount } : stream)),
@@ -46,7 +49,12 @@ export function HomeFeed() {
       if (cancelled) {
         return;
       }
-      socket.emit("join-lobby");
+      joinLobby = () => {
+        socket?.emit("join-lobby");
+        void refresh();
+      };
+      joinLobby();
+      socket.on("connect", joinLobby);
       socket.on("viewer-count", onCount);
       socket.on("stream-live", onLive);
       socket.on("stream-ended", onLive);
@@ -63,6 +71,7 @@ export function HomeFeed() {
       window.clearInterval(timer);
       window.clearTimeout(initial);
       if (socket) {
+        if (joinLobby) socket.off("connect", joinLobby);
         socket.off("viewer-count", onCount);
         socket.off("stream-live", onLive);
         socket.off("stream-ended", onLive);
@@ -77,7 +86,13 @@ export function HomeFeed() {
     <>
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 pb-32 pt-8">
         <section className="mb-10 max-w-2xl">
-          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-amber-400">Now on air</p>
+          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-amber-400">
+            {error
+              ? "Live directory unavailable"
+              : loaded
+                ? `${live.length} ${live.length === 1 ? "event" : "events"} live now`
+                : "Checking live events…"}
+          </p>
           <h1 className="mt-2 text-4xl font-semibold tracking-tight text-white sm:text-5xl">
             Tune in live, or listen only.
           </h1>
@@ -93,7 +108,11 @@ export function HomeFeed() {
           </p>
         ) : null}
 
-        {live.length === 0 && upcoming.length === 0 ? (
+        {!loaded && !error ? (
+          <div className="rounded-3xl border border-white/10 px-6 py-16 text-center" aria-live="polite">
+            <p className="text-lg text-zinc-300">Loading live events…</p>
+          </div>
+        ) : live.length === 0 && upcoming.length === 0 ? (
           <div className="rounded-3xl border border-dashed border-white/15 px-6 py-16 text-center">
             <p className="text-lg text-zinc-300">No live events right now.</p>
             <p className="mt-2 text-sm text-zinc-500">Tap Start stream to go live from this browser.</p>

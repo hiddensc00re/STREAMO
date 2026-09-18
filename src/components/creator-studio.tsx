@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Maximize2, Minimize2, Pause, Play, Square, Users } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Home, Maximize2, Minimize2, Pause, Play, Square, Users } from "lucide-react";
 import { useHostPeers } from "@/hooks/use-host-peers";
 import {
   captureFileStream,
@@ -13,8 +14,10 @@ import {
 import { OWNER_TOKEN_STORAGE_PREFIX, type PublicStream } from "@/lib/types";
 import { RESOLUTION_PRESETS, type ResolutionPreset } from "@/lib/media";
 import { safeParseJson } from "@/lib/safe-fetch";
+import { ShareEventLink } from "@/components/share-event-link";
 
 export function CreatorStudio({ streamId }: { streamId: string }) {
+  const router = useRouter();
   const [stream, setStream] = useState<PublicStream | null>(null);
   const [ownerToken] = useState<string | undefined>(() => {
     if (typeof window === "undefined") {
@@ -29,6 +32,7 @@ export function CreatorStudio({ streamId }: { streamId: string }) {
   const [paused, setPaused] = useState(false);
   const [fileName, setFileName] = useState<string | null>(null);
   const [broadcasting, setBroadcasting] = useState(false);
+  const [changingState, setChangingState] = useState(false);
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const fileVideoRef = useRef<HTMLVideoElement>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
@@ -58,11 +62,28 @@ export function CreatorStudio({ streamId }: { streamId: string }) {
     attachStream(media);
   }, [attachStream]);
 
+  const markLive = useCallback(async (isLive: boolean) => {
+    if (!ownerToken) {
+      throw new Error("This browser no longer has the owner key for this event.");
+    }
+    const response = await fetch(`/api/streams/${streamId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ownerToken, isLive }),
+    });
+    const body = await safeParseJson<PublicStream & { error?: string }>(response);
+    if (!response.ok || !body) {
+      throw new Error(body?.error ?? `Could not mark this event ${isLive ? "live" : "ended"}.`);
+    }
+    setStream(body);
+  }, [ownerToken, streamId]);
+
   const startCamera = useCallback(async (preset: ResolutionPreset = resolution) => {
     if (!stream) {
       return;
     }
     setMediaError(null);
+    setChangingState(true);
     try {
       stopMediaStream(cameraStreamRef.current);
       const media = await getCameraStream(preset, {
@@ -71,14 +92,22 @@ export function CreatorStudio({ streamId }: { streamId: string }) {
       });
       cameraStreamRef.current = media;
       previewStream(media);
+      await markLive(true);
       setBroadcasting(true);
     } catch (error) {
+      stopMediaStream(cameraStreamRef.current);
+      cameraStreamRef.current = null;
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = null;
+      }
       setMediaError(error instanceof Error ? error.message : permissionMessage("both"));
+    } finally {
+      setChangingState(false);
     }
-  }, [previewStream, resolution, stream]);
+  }, [markLive, previewStream, resolution, stream]);
 
   const onFileChosen = useCallback(
-    async (file: File) => {
+    (file: File) => {
       setMediaError(null);
       setFileName(file.name);
       if (fileObjectUrlRef.current) {
@@ -90,23 +119,44 @@ export function CreatorStudio({ streamId }: { streamId: string }) {
       if (!video) {
         return;
       }
+      video.pause();
       video.src = url;
       video.volume = 0;
-      try {
-        await video.play();
-        const captured = captureFileStream(video);
-        previewStream(captured);
-        setBroadcasting(true);
-      } catch (error) {
-        setMediaError(
-          error instanceof Error
-            ? error.message
-            : "Could not play that file. Use an MP4 or WebM video, or an audio file your browser can play.",
-        );
-      }
+      video.load();
     },
-    [previewStream],
+    [],
   );
+
+  const startFile = useCallback(async () => {
+    const video = fileVideoRef.current;
+    if (!video?.src) {
+      setMediaError("Choose a media file first.");
+      return;
+    }
+
+    setMediaError(null);
+    setChangingState(true);
+    try {
+      video.currentTime = 0;
+      await video.play();
+      const captured = captureFileStream(video);
+      previewStream(captured);
+      await markLive(true);
+      setBroadcasting(true);
+    } catch (error) {
+      video.pause();
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = null;
+      }
+      setMediaError(
+        error instanceof Error
+          ? error.message
+          : "Could not play that file. Use an MP4 or WebM video, or an audio file your browser can play.",
+      );
+    } finally {
+      setChangingState(false);
+    }
+  }, [markLive, previewStream]);
 
   useEffect(() => {
     return () => {
@@ -139,6 +189,7 @@ export function CreatorStudio({ streamId }: { streamId: string }) {
   };
 
   const stopBroadcast = async () => {
+    setChangingState(true);
     endStream();
     stopMediaStream(cameraStreamRef.current);
     cameraStreamRef.current = null;
@@ -147,13 +198,21 @@ export function CreatorStudio({ streamId }: { streamId: string }) {
       localVideoRef.current.srcObject = null;
     }
     setBroadcasting(false);
-    if (ownerToken) {
-      await fetch(`/api/streams/${streamId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ownerToken, isLive: false }),
-      });
+    setPaused(false);
+    try {
+      await markLive(false);
+    } catch (error) {
+      setMediaError(error instanceof Error ? error.message : "Could not close this event cleanly.");
+    } finally {
+      setChangingState(false);
     }
+  };
+
+  const returnHome = async () => {
+    if (broadcasting) {
+      await stopBroadcast();
+    }
+    router.push("/");
   };
 
   const scheduleLabel = useMemo(() => {
@@ -208,9 +267,20 @@ export function CreatorStudio({ streamId }: { streamId: string }) {
           <h1 className="text-2xl font-semibold text-white">{stream.title}</h1>
           <p className="text-sm text-zinc-400">{stream.streamerName}</p>
         </div>
-        <div className="inline-flex min-h-11 items-center gap-2 rounded-full bg-white/5 px-4 text-sm text-white">
-          <Users className="h-4 w-4" aria-hidden />
-          <span>{viewerCount} watching</span>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="inline-flex min-h-11 items-center gap-2 rounded-full bg-white/5 px-4 text-sm text-white">
+            <Users className="h-4 w-4" aria-hidden />
+            <span>{viewerCount} watching</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => void returnHome()}
+            disabled={changingState}
+            className="inline-flex min-h-11 items-center gap-2 rounded-full bg-white/10 px-4 text-sm font-medium text-white hover:bg-white/15 disabled:opacity-60"
+          >
+            <Home className="h-4 w-4" aria-hidden />
+            {broadcasting ? "End & return home" : "Back to home"}
+          </button>
         </div>
       </div>
 
@@ -244,6 +314,8 @@ export function CreatorStudio({ streamId }: { streamId: string }) {
         </p>
       ) : null}
 
+      <ShareEventLink streamId={streamId} title={stream.title} />
+
       {stream.streamType === "file" ? (
         <label className="flex min-h-12 cursor-pointer items-center justify-center rounded-2xl border border-dashed border-white/20 px-4 text-sm text-zinc-200">
           <input
@@ -253,7 +325,7 @@ export function CreatorStudio({ streamId }: { streamId: string }) {
             onChange={(event) => {
               const file = event.target.files?.[0];
               if (file) {
-                void onFileChosen(file);
+                onFileChosen(file);
               }
             }}
           />
@@ -270,24 +342,12 @@ export function CreatorStudio({ streamId }: { streamId: string }) {
                 void startCamera();
                 return;
               }
-              const fileVideo = fileVideoRef.current;
-              if (!fileVideo?.src) {
-                setMediaError("Choose a media file first.");
-                return;
-              }
-              void fileVideo
-                .play()
-                .then(() => {
-                  previewStream(captureFileStream(fileVideo));
-                  setBroadcasting(true);
-                })
-                .catch(() => {
-                  setMediaError("Could not start playback for this file.");
-                });
+              void startFile();
             }}
+            disabled={changingState}
             className="col-span-2 inline-flex min-h-12 items-center justify-center rounded-2xl bg-red-600 font-semibold text-white hover:bg-red-500 sm:col-span-1"
           >
-            Go live
+            {changingState ? "Starting…" : "Go live"}
           </button>
         ) : (
           <button
@@ -303,8 +363,9 @@ export function CreatorStudio({ streamId }: { streamId: string }) {
         <button
           type="button"
           onClick={() => void stopBroadcast()}
+          disabled={!broadcasting || changingState}
           aria-label="Stop broadcast"
-          className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-white/10 font-medium text-white"
+          className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-white/10 font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
         >
           <Square className="h-4 w-4 fill-current" />
           Stop
