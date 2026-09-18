@@ -195,9 +195,16 @@ io.on("connection", (socket) => {
     }
 
     const room = getRoom(streamId);
-    if (room.viewers.has(sessionId) && room.viewers.get(sessionId) !== socket.id) {
-      ack?.({ ok: false, error: "This session is already connected." });
-      return;
+    const previousSocketId = room.viewers.get(sessionId);
+    if (previousSocketId && previousSocketId !== socket.id) {
+      const previousSocket = io.sockets.sockets.get(previousSocketId);
+      previousSocket?.emit("viewer-replaced");
+      previousSocket?.leave(`stream:${streamId}`);
+      if (previousSocket?.data.sessionId === sessionId) {
+        previousSocket.data.role = undefined;
+        previousSocket.data.streamId = undefined;
+        previousSocket.data.sessionId = undefined;
+      }
     }
 
     room.viewers.set(sessionId, socket.id);
@@ -247,7 +254,14 @@ io.on("connection", (socket) => {
   });
 
   socket.on("leave-stream", () => {
+    const streamId = socket.data.streamId;
     cleanupSocket(socket.id, socket.data);
+    if (streamId) {
+      socket.leave(`stream:${streamId}`);
+    }
+    socket.data.role = undefined;
+    socket.data.streamId = undefined;
+    socket.data.sessionId = undefined;
   });
 
   socket.on("end-stream", async () => {
