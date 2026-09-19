@@ -25,8 +25,25 @@ model Stream {
   ownerTokenHash String     @map("owner_token_hash")
   endedAt        DateTime?  @map("ended_at")
   createdAt      DateTime   @default(now()) @map("created_at")
+  fileBroadcast  FileBroadcast?
 
   @@index([isLive, createdAt])
   @@index([scheduledAt])
   @@map("streams")
+}
+
+model FileBroadcast {
+  streamId    String   @id @map("stream_id")
+  stream      Stream   @relation(fields: [streamId], references: [id], onDelete: Cascade)
+  path        String   @unique
+  name        String
+  mime        String
+  size        Int
+  duration    Float    @default(0)
+  status      String   @default("uploading")
+  position    Float    @default(0)
+  anchor      DateTime @default(now())
+  uploadUntil DateTime @map("upload_until")
+
+  @@map("file_broadcasts")
 }

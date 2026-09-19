@@ -69,6 +69,10 @@ export async function PATCH(request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Not authorized to control this stream." }, { status: 403 });
   }
 
+  if (stream.streamType === "file" && typeof parsed.data.isLive === "boolean") {
+    return NextResponse.json({ error: "Use the uploaded file event controls." }, { status: 409 });
+  }
+
   const updated = await prisma.stream.update({
     where: { id },
     data: {
