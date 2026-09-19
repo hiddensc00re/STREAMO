@@ -10,6 +10,7 @@ import {
 import { SlidingWindowLimiter } from "@/lib/rate-limit";
 import { toPublicStream } from "@/lib/stream-mapper";
 import { safeParseRequestBody } from "@/lib/safe-fetch";
+import { playbackPosition } from "@/lib/file-broadcast";
 
 export const dynamic = "force-dynamic";
 
@@ -36,9 +37,15 @@ export async function GET() {
     },
     orderBy: [{ isLive: "desc" }, { viewerCount: "desc" }, { createdAt: "desc" }],
     take: 60,
+    include: { fileBroadcast: true },
   });
 
-  return NextResponse.json({ streams: streams.map(toPublicStream) });
+  const now = Date.now();
+  const visible = streams.filter((stream) => {
+    const file = stream.fileBroadcast;
+    return !file || file.status !== "playing" || playbackPosition(file, now) < file.duration;
+  });
+  return NextResponse.json({ streams: visible.map(toPublicStream) });
 }
 
 export async function POST(request: Request) {
