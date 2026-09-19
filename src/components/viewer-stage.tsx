@@ -6,6 +6,7 @@ import { Headphones, Volume2, VolumeX, Users } from "lucide-react";
 import { useViewerPeer } from "@/hooks/use-viewer-peer";
 import type { PublicStream } from "@/lib/types";
 import { safeParseJson } from "@/lib/safe-fetch";
+import { FileViewer } from "@/components/file-viewer";
 
 export function ViewerStage({ streamId }: { streamId: string }) {
   const [stream, setStream] = useState<PublicStream | null>(null);
@@ -23,7 +24,7 @@ export function ViewerStage({ streamId }: { streamId: string }) {
     error,
     connectionState,
     retry,
-  } = useViewerPeer(streamId, stream?.isLive === true);
+  } = useViewerPeer(streamId, stream?.isLive === true && stream.streamType !== "file");
 
   const refreshStream = useCallback(async () => {
     try {
@@ -85,6 +86,8 @@ export function ViewerStage({ streamId }: { streamId: string }) {
       </main>
     );
   }
+
+  if (stream?.streamType === "file") return <FileViewer stream={stream} />;
 
   return (
     <main className="relative flex min-h-[calc(100dvh-4rem)] flex-col bg-black">

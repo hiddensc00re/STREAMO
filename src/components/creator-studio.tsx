@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import { Home, Maximize2, Minimize2, Pause, Play, Square, Users } from "lucide-react";
 import { useHostPeers } from "@/hooks/use-host-peers";
 import {
-  captureFileStream,
   getCameraStream,
   permissionMessage,
   stopMediaStream,
@@ -15,6 +14,7 @@ import { OWNER_TOKEN_STORAGE_PREFIX, type PublicStream } from "@/lib/types";
 import { RESOLUTION_PRESETS, type ResolutionPreset } from "@/lib/media";
 import { safeParseJson } from "@/lib/safe-fetch";
 import { ShareEventLink } from "@/components/share-event-link";
+import { FileStudio } from "@/components/file-studio";
 
 export function CreatorStudio({ streamId }: { streamId: string }) {
   const router = useRouter();
@@ -30,13 +30,10 @@ export function CreatorStudio({ streamId }: { streamId: string }) {
   const [resolution, setResolution] = useState<ResolutionPreset>("720p");
   const [objectFit, setObjectFit] = useState<"contain" | "cover">("contain");
   const [paused, setPaused] = useState(false);
-  const [fileName, setFileName] = useState<string | null>(null);
   const [broadcasting, setBroadcasting] = useState(false);
   const [changingState, setChangingState] = useState(false);
   const localVideoRef = useRef<HTMLVideoElement>(null);
-  const fileVideoRef = useRef<HTMLVideoElement>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
-  const fileObjectUrlRef = useRef<string | null>(null);
 
   const { viewerCount, connected, error: peerError, attachStream, endStream, setPaused: setPeersPaused } =
     useHostPeers(broadcasting ? streamId : undefined, broadcasting ? ownerToken : undefined);
@@ -106,64 +103,9 @@ export function CreatorStudio({ streamId }: { streamId: string }) {
     }
   }, [markLive, previewStream, resolution, stream]);
 
-  const onFileChosen = useCallback(
-    (file: File) => {
-      setMediaError(null);
-      setFileName(file.name);
-      if (fileObjectUrlRef.current) {
-        URL.revokeObjectURL(fileObjectUrlRef.current);
-      }
-      const url = URL.createObjectURL(file);
-      fileObjectUrlRef.current = url;
-      const video = fileVideoRef.current;
-      if (!video) {
-        return;
-      }
-      video.pause();
-      video.src = url;
-      video.volume = 0;
-      video.load();
-    },
-    [],
-  );
-
-  const startFile = useCallback(async () => {
-    const video = fileVideoRef.current;
-    if (!video?.src) {
-      setMediaError("Choose a media file first.");
-      return;
-    }
-
-    setMediaError(null);
-    setChangingState(true);
-    try {
-      video.currentTime = 0;
-      await video.play();
-      const captured = captureFileStream(video);
-      previewStream(captured);
-      await markLive(true);
-      setBroadcasting(true);
-    } catch (error) {
-      video.pause();
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = null;
-      }
-      setMediaError(
-        error instanceof Error
-          ? error.message
-          : "Could not play that file. Use an MP4 or WebM video, or an audio file your browser can play.",
-      );
-    } finally {
-      setChangingState(false);
-    }
-  }, [markLive, previewStream]);
-
   useEffect(() => {
     return () => {
       stopMediaStream(cameraStreamRef.current);
-      if (fileObjectUrlRef.current) {
-        URL.revokeObjectURL(fileObjectUrlRef.current);
-      }
     };
   }, []);
 
@@ -178,14 +120,6 @@ export function CreatorStudio({ streamId }: { streamId: string }) {
     const next = !paused;
     setPaused(next);
     setPeersPaused(next);
-    const fileVideo = fileVideoRef.current;
-    if (fileVideo && stream?.streamType === "file") {
-      if (next) {
-        fileVideo.pause();
-      } else {
-        void fileVideo.play();
-      }
-    }
   };
 
   const stopBroadcast = async () => {
@@ -193,7 +127,6 @@ export function CreatorStudio({ streamId }: { streamId: string }) {
     endStream();
     stopMediaStream(cameraStreamRef.current);
     cameraStreamRef.current = null;
-    fileVideoRef.current?.pause();
     if (localVideoRef.current) {
       localVideoRef.current.srcObject = null;
     }
@@ -259,6 +192,8 @@ export function CreatorStudio({ streamId }: { streamId: string }) {
     );
   }
 
+  if (stream.streamType === "file") return <FileStudio stream={stream} ownerToken={ownerToken} />;
+
   return (
     <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-4 px-4 py-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -293,7 +228,6 @@ export function CreatorStudio({ streamId }: { streamId: string }) {
             muted
             playsInline
           />
-          <video ref={fileVideoRef} className="hidden" playsInline loop />
           {!broadcasting ? (
             <div className="absolute inset-0 flex items-center justify-center text-zinc-500">
               Preview appears after you go live
@@ -309,41 +243,17 @@ export function CreatorStudio({ streamId }: { streamId: string }) {
 
       {scheduleLabel && !broadcasting ? (
         <p className="rounded-2xl bg-amber-400/10 px-4 py-3 text-sm text-amber-100">
-          Scheduled for {scheduleLabel}. Start whenever you are ready — keep this tab open if you selected a
-          file.
+          Scheduled for {scheduleLabel}. Start whenever you are ready.
         </p>
       ) : null}
 
       <ShareEventLink streamId={streamId} title={stream.title} />
 
-      {stream.streamType === "file" ? (
-        <label className="flex min-h-12 cursor-pointer items-center justify-center rounded-2xl border border-dashed border-white/20 px-4 text-sm text-zinc-200">
-          <input
-            type="file"
-            accept="video/*,audio/*"
-            className="sr-only"
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file) {
-                onFileChosen(file);
-              }
-            }}
-          />
-          {fileName ? `Selected: ${fileName} (tap to change)` : "Choose a video or audio file to broadcast"}
-        </label>
-      ) : null}
-
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         {!broadcasting ? (
           <button
             type="button"
-            onClick={() => {
-              if (stream.streamType === "live_camera") {
-                void startCamera();
-                return;
-              }
-              void startFile();
-            }}
+            onClick={() => void startCamera()}
             disabled={changingState}
             className="col-span-2 inline-flex min-h-12 items-center justify-center rounded-2xl bg-red-600 font-semibold text-white hover:bg-red-500 sm:col-span-1"
           >
