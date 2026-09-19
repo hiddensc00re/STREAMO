@@ -1,8 +1,8 @@
 # STREAMO
 
-A live WebRTC streaming platform. Creators broadcast from a browser camera or a local media file. Viewers join instantly and can switch to **audio only** so the host stops sending video to that peer.
+A streaming platform with live WebRTC camera broadcasts and uploaded file events that work from iPhone Safari. Camera viewers can switch to **audio only** so the host stops sending video to that peer.
 
-No accounts. No OBS. No uploads to a media bucket.
+No viewer accounts or OBS required. File events use a private Supabase bucket on the Free plan; see [file event setup and limits](docs/file-events.md).
 
 ## Local setup
 
@@ -52,19 +52,19 @@ Neon already holds Postgres. Render runs two web services from `render.yaml`:
 3. Set **`DATABASE_URL`** on `streamo-web` to the Neon **pooled** connection string (`sslmode=require`).
 4. Deploy. `INTERNAL_API_SECRET` is generated once and shared with signaling. Public URLs are wired automatically.
 
-Free instances sleep after idle time, which will drop live streams. Use a paid instance for a public demo.
+Free instances sleep after idle time, which can interrupt camera streams. Uploaded file playback does not depend on the signaling service staying awake.
 
 Browsers on different networks often need a **TURN** server. Set `NEXT_PUBLIC_TURN_URL`, `NEXT_PUBLIC_TURN_USERNAME`, and `NEXT_PUBLIC_TURN_CREDENTIAL` on `streamo-web`.
 
 ## How it works
 
 1. Creating an event writes a `streams` row and returns an owner token stored only in that browser.
-2. Going live captures camera tracks or `HTMLMediaElement.captureStream()` for a file.
-3. Each viewer gets a WebRTC peer connection from the creator (mesh). Signaling is Socket.io.
-4. **Listen only** tells the creator to `replaceTrack(null)` on the video sender for that viewer, which actually cuts video bitrate.
-5. Viewer counts are room membership on the signaling server, mirrored to Postgres.
+2. Camera events capture camera tracks. File events upload up to 50 MB directly to private storage, then use a shared playback clock in Postgres.
+3. Each camera viewer gets a WebRTC peer connection from the creator (mesh). Signaling is Socket.io. File viewers use expiring playback URLs.
+4. For cameras, **Listen only** tells the creator to `replaceTrack(null)` on the video sender for that viewer, which actually cuts video bitrate.
+5. Camera viewer counts are room membership on the signaling server, mirrored to Postgres. File events do not report viewer counts.
 
-Scheduled events store a go-live time. The media file is **not** uploaded; the creator must keep (or re-select) it on the original device.
+Scheduled events store a planned go-live time; the creator starts playback manually. After upload completes and playback starts, a file event continues if the creator closes the tab. Safari must stay open during upload.
 
 ## Scripts
 
