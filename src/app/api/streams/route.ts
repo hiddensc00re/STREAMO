@@ -27,6 +27,7 @@ function clientIp(request: Request): string {
 export async function GET() {
   const streams = await prisma.stream.findMany({
     where: {
+      endedAt: null,
       OR: [
         { isLive: true },
         {
@@ -42,8 +43,12 @@ export async function GET() {
 
   const now = Date.now();
   const visible = streams.filter((stream) => {
+    if (stream.endedAt) return false;
+    if (!stream.isLive || stream.streamType !== "file") return true;
     const file = stream.fileBroadcast;
-    return !file || file.status !== "playing" || playbackPosition(file, now) < file.duration;
+    // Legacy file events without an uploaded broadcast cannot still be live.
+    return Boolean(file && (file.status === "playing" || file.status === "paused") &&
+      playbackPosition(file, now) < file.duration);
   });
   return NextResponse.json({ streams: visible.map(toPublicStream) });
 }
