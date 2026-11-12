@@ -59,7 +59,7 @@ export function FileViewer({ stream, accessToken }: { stream: PublicStream; acce
     load();
     const renewal = setInterval(load, stream.isPrivate ? 4 * 60000 : 50 * 60000);
     return () => { disposed = true; clearInterval(renewal); };
-  }, [live, loadVideo]);
+  }, [live, loadVideo, stream.isPrivate]);
   return <main className="mx-auto w-full max-w-5xl space-y-4 px-4 py-6 text-white">
     <h1 className="text-2xl font-semibold">{stream.title}</h1>
     <p className="text-zinc-400">{stream.streamerName} · Shared file playback</p>
