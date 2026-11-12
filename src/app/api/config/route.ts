@@ -8,5 +8,5 @@ export async function GET() {
     process.env.NEXT_PUBLIC_SIGNALING_URL ||
     "http://localhost:4001";
 
-  return NextResponse.json({ signalingUrl });
+  return NextResponse.json({ signalingUrl, privateLinksEnabled: process.env.PRIVATE_LINK_STREAMS_ENABLED === "true" }, { headers: { "Cache-Control": "no-store" } });
 }

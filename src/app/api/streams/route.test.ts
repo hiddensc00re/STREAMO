@@ -28,5 +28,6 @@ describe("live directory", () => {
     const body = await (await GET()).json();
     expect(body.streams.map((s: { id: string }) => s.id)).toEqual(["playing", "paused", "scheduled", "camera"]);
     expect(findMany.mock.calls[0][0].where.endedAt).toBeNull();
+    expect(findMany.mock.calls[0][0].where.isPrivate).toBe(false);
   });
 });

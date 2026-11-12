@@ -23,6 +23,8 @@ model Stream {
   viewerCount    Int        @default(0) @map("viewer_count")
   scheduledAt    DateTime?  @map("scheduled_at")
   ownerTokenHash String     @map("owner_token_hash")
+  isPrivate      Boolean    @default(false) @map("is_private")
+  accessTokenHash String?   @map("access_token_hash")
   endedAt        DateTime?  @map("ended_at")
   createdAt      DateTime   @default(now()) @map("created_at")
   fileBroadcast  FileBroadcast?

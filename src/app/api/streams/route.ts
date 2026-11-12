@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sanitizeText } from "@/lib/sanitize";
 import { createOwnerToken, hashOwnerToken } from "@/lib/owner-token";
+import { createAccessToken, hashAccessToken } from "@/lib/stream-access";
 import {
   STREAM_TITLE_MAX,
   STREAMER_NAME_MAX,
@@ -28,6 +29,7 @@ export async function GET() {
   const streams = await prisma.stream.findMany({
     where: {
       endedAt: null,
+      isPrivate: false,
       OR: [
         { isLive: true },
         {
@@ -68,6 +70,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid stream details." }, { status: 400 });
   }
 
+  if (parsed.data.isPrivate && process.env.PRIVATE_LINK_STREAMS_ENABLED !== "true") {
+    return NextResponse.json({ error: "Private links are not enabled yet." }, { status: 503 });
+  }
   const title = sanitizeText(parsed.data.title, STREAM_TITLE_MAX);
   const streamerName = sanitizeText(parsed.data.streamerName, STREAMER_NAME_MAX);
 
@@ -88,6 +93,7 @@ export async function POST(request: Request) {
   }
 
   const ownerToken = createOwnerToken();
+  const accessToken = parsed.data.isPrivate ? createAccessToken() : undefined;
   const stream = await prisma.stream.create({
     data: {
       title,
@@ -98,8 +104,10 @@ export async function POST(request: Request) {
       isLive: false,
       scheduledAt,
       ownerTokenHash: hashOwnerToken(ownerToken),
+      isPrivate: parsed.data.isPrivate,
+      accessTokenHash: accessToken ? hashAccessToken(accessToken) : null,
     },
   });
 
-  return NextResponse.json({ ...toPublicStream(stream), ownerToken }, { status: 201 });
+  return NextResponse.json({ ...toPublicStream(stream), ownerToken, ...(accessToken ? { accessToken } : {}) }, { status: 201, headers: { "Cache-Control": "no-store" } });
 }
