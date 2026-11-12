@@ -10,6 +10,7 @@ import { FileViewer } from "@/components/file-viewer";
 
 export function ViewerStage({ streamId }: { streamId: string }) {
   const [stream, setStream] = useState<PublicStream | null>(null);
+  const [accessToken] = useState(() => typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("access") ?? "");
   const [loadError, setLoadError] = useState<string | null>(null);
   const [muted, setMuted] = useState(false);
   const [volume, setVolume] = useState(1);
@@ -24,11 +25,11 @@ export function ViewerStage({ streamId }: { streamId: string }) {
     error,
     connectionState,
     retry,
-  } = useViewerPeer(streamId, stream?.isLive === true && stream.streamType !== "file");
+  } = useViewerPeer(streamId, stream?.isLive === true && stream.streamType !== "file", accessToken);
 
   const refreshStream = useCallback(async () => {
     try {
-      const response = await fetch(`/api/streams/${streamId}`, { cache: "no-store" });
+      const response = await fetch(`/api/streams/${streamId}`, { cache: "no-store", headers: accessToken ? { "x-stream-access-token": accessToken } : {} });
       const body = await safeParseJson<PublicStream & { error?: string }>(response);
       if (!response.ok || !body) {
         throw new Error(body?.error ?? "Stream not found.");
@@ -36,9 +37,10 @@ export function ViewerStage({ streamId }: { streamId: string }) {
       setStream(body);
       setLoadError(null);
     } catch (err) {
+      setStream(null);
       setLoadError(err instanceof Error ? err.message : "Stream not found.");
     }
-  }, [streamId]);
+  }, [streamId, accessToken]);
 
   useEffect(() => {
     const initial = window.setTimeout(() => void refreshStream(), 0);
@@ -87,7 +89,7 @@ export function ViewerStage({ streamId }: { streamId: string }) {
     );
   }
 
-  if (stream?.streamType === "file") return <FileViewer stream={stream} />;
+  if (stream?.streamType === "file") return <FileViewer stream={stream} accessToken={accessToken} />;
 
   return (
     <main className="relative flex min-h-[calc(100dvh-4rem)] flex-col bg-black">

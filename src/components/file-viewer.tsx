@@ -5,7 +5,7 @@ import Link from "next/link";
 import type { FileState } from "@/lib/file-broadcast";
 import type { PublicStream } from "@/lib/types";
 
-export function FileViewer({ stream }: { stream: PublicStream }) {
+export function FileViewer({ stream, accessToken }: { stream: PublicStream; accessToken: string }) {
   const [state, setState] = useState<FileState | null>(null);
   const [url, setUrl] = useState<string>();
   const [error, setError] = useState<string>();
@@ -29,7 +29,7 @@ export function FileViewer({ stream }: { stream: PublicStream }) {
     let disposed = false;
     const refresh = async () => {
       try {
-        const response = await fetch(`/api/streams/${stream.id}/file`, { cache: "no-store" });
+        const response = await fetch(`/api/streams/${stream.id}/file`, { cache: "no-store", headers: accessToken ? { "x-stream-access-token": accessToken } : {} });
         if (!response.ok) throw new Error("Could not refresh the event. Retrying…");
         const body = await response.json();
         if (disposed) return;
@@ -38,26 +38,26 @@ export function FileViewer({ stream }: { stream: PublicStream }) {
         if (body.file) clock.current = { state: body.file, receivedAt: performance.now() };
         else { clock.current = null; video.current?.pause(); }
         sync();
-      } catch (err) { if (!disposed) { video.current?.pause(); setConnectionError(err instanceof Error ? err.message : "Connection interrupted."); } }
+      } catch (err) { if (!disposed) { video.current?.pause(); setUrl(undefined); setState(null); clock.current = null; setConnectionError(err instanceof Error ? err.message : "Connection interrupted."); } }
     };
     const refreshVisible = () => { if (document.visibilityState === "visible") void refresh(); };
     void refresh();
     const timer = setInterval(() => void refresh(), 4000);
     document.addEventListener("visibilitychange", refreshVisible);
     return () => { disposed = true; clearInterval(timer); document.removeEventListener("visibilitychange", refreshVisible); };
-  }, [stream.id, sync]);
+  }, [stream.id, sync, accessToken]);
   const loadVideo = useCallback(async () => {
-    const response = await fetch(`/api/streams/${stream.id}/file/playback`, { cache: "no-store" });
+    const response = await fetch(`/api/streams/${stream.id}/file/playback`, { cache: "no-store", headers: accessToken ? { "x-stream-access-token": accessToken } : {} });
     const body = await response.json();
     if (!response.ok) throw new Error(body.error ?? "Could not load the video.");
     setUrl(body.url); setError(undefined);
-  }, [stream.id]);
+  }, [stream.id, accessToken]);
   useEffect(() => {
     if (!live) return;
     let disposed = false;
     const load = () => void loadVideo().catch((err) => { if (!disposed) setError(err.message); });
     load();
-    const renewal = setInterval(load, 50 * 60000);
+    const renewal = setInterval(load, stream.isPrivate ? 4 * 60000 : 50 * 60000);
     return () => { disposed = true; clearInterval(renewal); };
   }, [live, loadVideo]);
   return <main className="mx-auto w-full max-w-5xl space-y-4 px-4 py-6 text-white">
