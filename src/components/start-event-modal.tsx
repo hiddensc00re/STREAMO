@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CalendarClock, Upload, Video, X } from "lucide-react";
-import { DISPLAY_NAME_KEY, OWNER_TOKEN_STORAGE_PREFIX, type CreateStreamResponse } from "@/lib/types";
+import { CalendarClock, LockKeyhole, Globe2, Upload, Video, X } from "lucide-react";
+import { DISPLAY_NAME_KEY, OWNER_TOKEN_STORAGE_PREFIX, ACCESS_TOKEN_STORAGE_PREFIX, type CreateStreamResponse } from "@/lib/types";
 import { STREAM_TITLE_MAX, STREAMER_NAME_MAX } from "@/lib/media";
 import { safeParseJson } from "@/lib/safe-fetch";
 
@@ -24,6 +24,15 @@ export function StartEventModal({ open, onClose }: Props) {
   const [source, setSource] = useState<"live_camera" | "file">("live_camera");
   const [hasVideo, setHasVideo] = useState(true);
   const [hasAudio, setHasAudio] = useState(true);
+  const [isPrivate, setIsPrivate] = useState(false);
+  const [privateEnabled, setPrivateEnabled] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    void fetch("/api/config", { cache: "no-store" })
+      .then((response) => response.json())
+      .then((config: { privateLinksEnabled?: boolean }) => setPrivateEnabled(config.privateLinksEnabled === true))
+      .catch(() => setPrivateEnabled(false));
+  }, [open]);
   const [scheduleEnabled, setScheduleEnabled] = useState(false);
   const [scheduledAt, setScheduledAt] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -52,6 +61,7 @@ export function StartEventModal({ open, onClose }: Props) {
           streamType: source,
           hasVideo,
           hasAudio,
+          isPrivate,
           scheduledAt: scheduleEnabled && scheduledAt ? new Date(scheduledAt).toISOString() : null,
         }),
       });
@@ -61,6 +71,7 @@ export function StartEventModal({ open, onClose }: Props) {
       }
       localStorage.setItem(DISPLAY_NAME_KEY, streamerName.trim());
       localStorage.setItem(`${OWNER_TOKEN_STORAGE_PREFIX}${body.id}`, body.ownerToken);
+      if (body.accessToken) localStorage.setItem(`${ACCESS_TOKEN_STORAGE_PREFIX}${body.id}`, body.accessToken);
       onClose();
       router.push(`/studio/${body.id}`);
     } catch (err) {
@@ -140,6 +151,15 @@ export function StartEventModal({ open, onClose }: Props) {
               />
             </div>
           </fieldset>
+
+          {privateEnabled ? <fieldset className="space-y-2">
+            <legend className="text-sm font-medium text-zinc-200">Event visibility</legend>
+            <div className="grid grid-cols-2 gap-2">
+              <SourceChoice selected={!isPrivate} icon={<Globe2 className="h-5 w-5" />} label="Public" onClick={() => setIsPrivate(false)} />
+              <SourceChoice selected={isPrivate} icon={<LockKeyhole className="h-5 w-5" />} label="Private link" onClick={() => setIsPrivate(true)} />
+            </div>
+            {isPrivate ? <p className="text-xs text-amber-200">Only people with your secret link can join. This event is hidden from the public feed. Anyone with the link may forward it.</p> : null}
+          </fieldset> : null}
 
           <fieldset className="flex gap-3">
             <label className="inline-flex min-h-11 items-center gap-2 text-sm text-zinc-200">
