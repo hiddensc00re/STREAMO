@@ -25,7 +25,7 @@ export function FileStudio({ stream, ownerToken }: { stream: PublicStream; owner
     const body = await response.json();
     setState(body.file);
     setLoaded(true);
-  }, [endpoint]);
+  }, [endpoint, ownerToken]);
   useEffect(() => {
     const update = () => void refresh().catch((err) => setError(err.message));
     update();
