@@ -30,7 +30,7 @@ export function StartEventModal({ open, onClose }: Props) {
     if (!open) return;
     void fetch("/api/config", { cache: "no-store" })
       .then((response) => response.json())
-      .then((config: { privateLinksEnabled?: boolean }) => setPrivateEnabled(config.privateLinksEnabled === true))
+      .then((config: { privateLinksEnabled?: boolean }) => { const enabled = config.privateLinksEnabled === true; setPrivateEnabled(enabled); if (!enabled) setIsPrivate(false); })
       .catch(() => setPrivateEnabled(false));
   }, [open]);
   const [scheduleEnabled, setScheduleEnabled] = useState(false);
