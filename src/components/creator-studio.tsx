@@ -39,7 +39,7 @@ export function CreatorStudio({ streamId }: { streamId: string }) {
     useHostPeers(broadcasting ? streamId : undefined, broadcasting ? ownerToken : undefined);
 
   useEffect(() => {
-    void fetch(`/api/streams/${streamId}`)
+    void fetch(`/api/streams/${streamId}`, { headers: ownerToken ? { authorization: `Bearer ${ownerToken}` } : {} })
       .then(async (response) => {
         const body = await safeParseJson<PublicStream & { error?: string }>(response);
         if (!response.ok || !body) {
@@ -50,7 +50,7 @@ export function CreatorStudio({ streamId }: { streamId: string }) {
       .catch((error: unknown) => {
         setLoadError(error instanceof Error ? error.message : "Stream not found.");
       });
-  }, [streamId]);
+  }, [streamId, ownerToken]);
 
   const previewStream = useCallback((media: MediaStream) => {
     if (localVideoRef.current) {
@@ -247,7 +247,7 @@ export function CreatorStudio({ streamId }: { streamId: string }) {
         </p>
       ) : null}
 
-      <ShareEventLink streamId={streamId} title={stream.title} />
+      <ShareEventLink streamId={streamId} title={stream.title} isPrivate={stream.isPrivate} />
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         {!broadcasting ? (
@@ -314,9 +314,9 @@ export function CreatorStudio({ streamId }: { streamId: string }) {
 
       <p className="text-sm text-zinc-500">
         {connected ? "Broadcasting to viewers over WebRTC." : "Signaling connects when you go live."} Share{" "}
-        <Link className="text-amber-300 underline" href={`/watch/${streamId}`}>
+        {stream.isPrivate ? <span className="text-amber-300">the private invitation link above</span> : <Link className="text-amber-300 underline" href={`/watch/${streamId}`}>
           the viewer link
-        </Link>
+        </Link>}
         .
       </p>
     </main>

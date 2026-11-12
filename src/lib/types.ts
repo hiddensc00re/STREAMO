@@ -6,6 +6,7 @@ export type PublicStream = {
   hasVideo: boolean;
   hasAudio: boolean;
   isLive: boolean;
+  isPrivate: boolean;
   viewerCount: number;
   scheduledAt: string | null;
   createdAt: string;
@@ -14,9 +15,11 @@ export type PublicStream = {
 
 export type CreateStreamResponse = PublicStream & {
   ownerToken: string;
+  accessToken?: string;
 };
 
 export const OWNER_TOKEN_STORAGE_PREFIX = "streamo:owner:";
+export const ACCESS_TOKEN_STORAGE_PREFIX = "streamo:access:";
 export const SESSION_ID_KEY = "streamo:session-id";
 export const DISPLAY_NAME_KEY = "streamo:display-name";
 

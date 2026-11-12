@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { looksSafeId } from "@/lib/sanitize";
 import { ownerTokenMatches } from "@/lib/owner-token";
+import { canReadStream } from "@/lib/stream-access";
 import { secretsEqual } from "@/lib/secrets";
 import { updateStreamSchema } from "@/lib/media";
 import { toPublicStream } from "@/lib/stream-mapper";
@@ -22,18 +23,22 @@ function clientIp(request: Request): string {
 
 type RouteContext = { params: Promise<{ id: string }> };
 
-export async function GET(_request: Request, context: RouteContext) {
+export async function GET(request: Request, context: RouteContext) {
   const { id } = await context.params;
   if (!looksSafeId(id)) {
     return NextResponse.json({ error: "Stream not found." }, { status: 404 });
   }
 
   const stream = await prisma.stream.findUnique({ where: { id } });
-  if (!stream) {
-    return NextResponse.json({ error: "Stream not found." }, { status: 404 });
+  if (!stream || !canReadStream(
+    stream,
+    request.headers.get("x-stream-access-token"),
+    request.headers.get("authorization")?.replace(/^Bearer /i, "") ?? null,
+  )) {
+    return NextResponse.json({ error: "Stream not found or private link revoked." }, { status: 404, headers: { "Cache-Control": "no-store" } });
   }
 
-  return NextResponse.json(toPublicStream(stream));
+  return NextResponse.json(toPublicStream(stream), { headers: { "Cache-Control": "no-store" } });
 }
 
 export async function PATCH(request: Request, context: RouteContext) {

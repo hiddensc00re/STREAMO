@@ -9,6 +9,7 @@ type SocketData = {
   role?: Role;
   streamId?: string;
   sessionId?: string;
+  accessToken?: string;
   ip: string;
 };
 
@@ -40,6 +41,7 @@ const rooms = new Map<
   {
     hostSocketId?: string;
     viewers: Map<string, string>;
+    isPrivate?: boolean;
   }
 >();
 const hostDisconnectTimers = new Map<string, NodeJS.Timeout>();
@@ -99,7 +101,7 @@ function broadcastCount(io: Server, streamId: string) {
   const room = rooms.get(streamId);
   const viewerCount = room?.viewers.size ?? 0;
   io.to(`stream:${streamId}`).emit("viewer-count", { streamId, viewerCount });
-  io.to("lobby").emit("viewer-count", { streamId, viewerCount });
+  if (!room?.isPrivate) io.to("lobby").emit("viewer-count", { streamId, viewerCount });
   void persistViewerCount(streamId, viewerCount);
 }
 
@@ -147,6 +149,7 @@ io.on("connection", (socket) => {
       return;
     }
 
+    let isPrivate = false;
     try {
       const response = await fetch(`${APP_URL}/api/streams/${streamId}`, {
         method: "PATCH",
@@ -157,12 +160,15 @@ io.on("connection", (socket) => {
         ack?.({ ok: false, error: "Could not claim this stream." });
         return;
       }
+      const stream = await response.json() as { isPrivate?: boolean };
+      isPrivate = stream.isPrivate === true;
     } catch {
       ack?.({ ok: false, error: "Could not reach the stream directory." });
       return;
     }
 
     const room = getRoom(streamId);
+    room.isPrivate = isPrivate;
     cancelHostDisconnectTimer(streamId);
     if (room.hostSocketId && room.hostSocketId !== socket.id) {
       io.to(room.hostSocketId).emit("host-replaced");
@@ -173,7 +179,7 @@ io.on("connection", (socket) => {
     socket.data.streamId = streamId;
     socket.join(`stream:${streamId}`);
     ack?.({ ok: true });
-    io.to("lobby").emit("stream-live", { streamId });
+    if (!room.isPrivate) io.to("lobby").emit("stream-live", { streamId });
     broadcastCount(io, streamId);
 
     for (const [sessionId, viewerSocketId] of room.viewers) {
@@ -182,7 +188,7 @@ io.on("connection", (socket) => {
     }
   });
 
-  socket.on("join-as-viewer", (payload: { streamId?: string; sessionId?: string }, ack?: (result: { ok: boolean; error?: string }) => void) => {
+  socket.on("join-as-viewer", async (payload: { streamId?: string; sessionId?: string; accessToken?: string }, ack?: (result: { ok: boolean; error?: string }) => void) => {
     const streamId = payload?.streamId;
     const sessionId = payload?.sessionId;
     if (!streamId || !sessionId) {
@@ -194,7 +200,20 @@ io.on("connection", (socket) => {
       return;
     }
 
+    const token = payload?.accessToken ?? "";
+    let isPrivate = false;
+    try {
+      const response = await fetch(`${APP_URL}/api/streams/${encodeURIComponent(streamId)}`, {
+        headers: token ? { "x-stream-access-token": token } : {},
+        cache: "no-store", signal: AbortSignal.timeout(8000),
+      });
+      if (!response.ok) { ack?.({ ok: false, error: "Event not found or private link revoked." }); return; }
+      const stream = await response.json() as { isPrivate?: boolean };
+      isPrivate = stream.isPrivate === true;
+    } catch { ack?.({ ok: false, error: "Could not verify event access." }); return; }
+    if (!socket.connected) return;
     const room = getRoom(streamId);
+    room.isPrivate = isPrivate;
     const previousSocketId = room.viewers.get(sessionId);
     if (previousSocketId && previousSocketId !== socket.id) {
       const previousSocket = io.sockets.sockets.get(previousSocketId);
@@ -210,6 +229,7 @@ io.on("connection", (socket) => {
     room.viewers.set(sessionId, socket.id);
     socket.data.role = "viewer";
     socket.data.streamId = streamId;
+    socket.data.accessToken = isPrivate ? token : undefined;
     socket.data.sessionId = sessionId;
     socket.join(`stream:${streamId}`);
     ack?.({ ok: true, error: undefined });
@@ -262,6 +282,7 @@ io.on("connection", (socket) => {
     socket.data.role = undefined;
     socket.data.streamId = undefined;
     socket.data.sessionId = undefined;
+    socket.data.accessToken = undefined;
   });
 
   socket.on("end-stream", async () => {
@@ -270,7 +291,7 @@ io.on("connection", (socket) => {
       return;
     }
     io.to(`stream:${streamId}`).emit("stream-ended", { streamId });
-    io.to("lobby").emit("stream-ended", { streamId });
+    if (!rooms.get(streamId)?.isPrivate) io.to("lobby").emit("stream-ended", { streamId });
     cancelHostDisconnectTimer(streamId);
     await persistViewerCount(streamId, 0, false);
     rooms.delete(streamId);
@@ -294,7 +315,7 @@ function cleanupSocket(socketId: string, data: SocketData) {
   if (data.role === "host" && room.hostSocketId === socketId) {
     room.hostSocketId = undefined;
     io.to(`stream:${streamId}`).emit("host-disconnected");
-    io.to("lobby").emit("host-disconnected", { streamId });
+    if (!room.isPrivate) io.to("lobby").emit("host-disconnected", { streamId });
     cancelHostDisconnectTimer(streamId);
     const timer = setTimeout(() => {
       hostDisconnectTimers.delete(streamId);
@@ -303,7 +324,7 @@ function cleanupSocket(socketId: string, data: SocketData) {
         return;
       }
       io.to(`stream:${streamId}`).emit("stream-ended", { streamId });
-      io.to("lobby").emit("stream-ended", { streamId });
+      if (!currentRoom?.isPrivate) io.to("lobby").emit("stream-ended", { streamId });
       void persistViewerCount(streamId, 0, false);
       rooms.delete(streamId);
     }, 15_000);
@@ -324,6 +345,35 @@ function cleanupSocket(socketId: string, data: SocketData) {
     rooms.delete(streamId);
   }
 }
+
+// Active private viewers are revalidated, including following link regeneration.
+setInterval(() => {
+  for (const [streamId, room] of rooms) {
+    if (!room.isPrivate) continue;
+    for (const [sessionId, socketId] of room.viewers) {
+      const socket = io.sockets.sockets.get(socketId);
+      if (!socket || !socket.connected) continue;
+      void (async () => {
+        let authorized = false;
+        try {
+          const response = await fetch(`${APP_URL}/api/streams/${encodeURIComponent(streamId)}`, {
+            headers: socket.data.accessToken ? { "x-stream-access-token": socket.data.accessToken } : {},
+            cache: "no-store", signal: AbortSignal.timeout(8000),
+          });
+          authorized = response.ok;
+        } catch { /* fail closed */ }
+        if (authorized || socket.data.role !== "viewer" || socket.data.streamId !== streamId || socket.data.sessionId !== sessionId) return;
+        socket.emit("viewer-access-revoked");
+        socket.leave(`stream:${streamId}`);
+        cleanupSocket(socket.id, socket.data);
+        socket.data.role = undefined;
+        socket.data.streamId = undefined;
+        socket.data.sessionId = undefined;
+        socket.data.accessToken = undefined;
+      })();
+    }
+  }
+}, 5000);
 
 httpServer.listen(PORT, "0.0.0.0", () => {
   console.log(`STREAMO signaling listening on ${PORT}`);

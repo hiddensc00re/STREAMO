@@ -3,17 +3,21 @@ import { prisma } from "@/lib/prisma";
 import { looksSafeId } from "@/lib/sanitize";
 import { mediaBucket } from "@/lib/storage-server";
 import { playbackPosition } from "@/lib/file-broadcast";
+import { canReadStream } from "@/lib/stream-access";
 
 export const dynamic = "force-dynamic";
-export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
+export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   const { id } = await context.params;
   if (!looksSafeId(id)) return NextResponse.json({ error: "Event not found." }, { status: 404 });
   const file = await prisma.fileBroadcast.findUnique({ where: { streamId: id }, include: { stream: true } });
-  if (!file || !file.stream.isLive || !["playing", "paused"].includes(file.status) || playbackPosition(file) >= file.duration) {
+  if (!file || !canReadStream(file.stream, request.headers.get("x-stream-access-token"))) {
+    return NextResponse.json({ error: "Event not found or private link revoked." }, { status: 404, headers: { "Cache-Control": "no-store" } });
+  }
+  if (!file.stream.isLive || !["playing", "paused"].includes(file.status) || playbackPosition(file) >= file.duration) {
     return NextResponse.json({ error: "This file event is not live." }, { status: 409 });
   }
   try {
-    const { data, error } = await mediaBucket().createSignedUrl(file.path, 3600);
+    const { data, error } = await mediaBucket().createSignedUrl(file.path, file.stream.isPrivate ? 300 : 3600);
     if (error || !data) throw new Error("Storage unavailable");
     return NextResponse.json({ url: data.signedUrl }, { headers: { "Cache-Control": "private, no-store" } });
   } catch {

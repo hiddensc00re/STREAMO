@@ -20,12 +20,12 @@ export function FileStudio({ stream, ownerToken }: { stream: PublicStream; owner
   const upload = useRef<XMLHttpRequest | null>(null);
   const live = state?.status === "playing" || state?.status === "paused";
   const refresh = useCallback(async () => {
-    const response = await fetch(endpoint, { cache: "no-store" });
+    const response = await fetch(endpoint, { cache: "no-store", headers: { authorization: `Bearer ${ownerToken}` } });
     if (!response.ok) throw new Error("Could not load upload status. Try again.");
     const body = await response.json();
     setState(body.file);
     setLoaded(true);
-  }, [endpoint]);
+  }, [endpoint, ownerToken]);
   useEffect(() => {
     const update = () => void refresh().catch((err) => setError(err.message));
     update();
@@ -87,7 +87,7 @@ export function FileStudio({ stream, ownerToken }: { stream: PublicStream; owner
     <h1 className="text-2xl font-semibold">{stream.title}</h1>
     <p className="text-zinc-300">Upload your file, then start a shared viewing event. Late viewers join the current playback position.</p>
     <p className="text-sm text-zinc-400">Free uploads: up to 50 MB each. MP4/MOV video or MP3/M4A audio. No format conversion; H.264 video with AAC audio is recommended for broad compatibility. Keep Safari open during upload.</p>
-    <ShareEventLink streamId={stream.id} title={stream.title} />
+    <ShareEventLink streamId={stream.id} title={stream.title} isPrivate={stream.isPrivate} />
     {!state || state.status === "uploading" ? <label className="block rounded-2xl border border-dashed border-white/25 p-5">
       <span>Choose a file from your device</span>
       <input type="file" aria-label="Choose media file" accept="video/mp4,video/quicktime,audio/mp4,audio/mpeg,.mp4,.mov,.m4a,.mp3" disabled={busy || !loaded} className="mt-3 block w-full" onChange={(event) => {
@@ -106,7 +106,7 @@ export function FileStudio({ stream, ownerToken }: { stream: PublicStream; owner
       {live ? <>
         <button className={buttonClass} disabled={busy} onClick={() => void act(state?.status === "paused" ? "resume" : "pause")}>{state?.status === "paused" ? "Resume" : "Pause"}</button>
         <button className={buttonClass} disabled={busy} onClick={() => void act("stop")}>End event</button>
-        <Link className={buttonClass} href={`/watch/${stream.id}`}>Open live player</Link>
+        {!stream.isPrivate ? <Link className={buttonClass} href={`/watch/${stream.id}`}>Open live player</Link> : null}
       </> : null}
       {state && !live ? <button className={buttonClass} disabled={busy || state.serverNow < Date.parse(state.removableAt)} onClick={() => { if (window.confirm("Permanently remove this uploaded file?")) void act("remove"); }}>Remove upload</button> : null}
       <Link className={buttonClass} href="/">Back to feed</Link>

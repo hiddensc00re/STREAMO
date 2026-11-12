@@ -20,7 +20,7 @@ export type ViewerConnectionState = "connecting" | "retrying" | "connected" | "f
 const MAX_CONNECT_RETRIES = 3;
 const CONNECT_RETRY_DELAY_MS = 7_000;
 
-export function useViewerPeer(streamId: string | undefined, enabled = true) {
+export function useViewerPeer(streamId: string | undefined, enabled = true, accessToken = "") {
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [viewerCount, setViewerCount] = useState(0);
   const [audioOnly, setAudioOnly] = useState(false);
@@ -152,7 +152,7 @@ export function useViewerPeer(streamId: string | undefined, enabled = true) {
 
       activeSocket.emit(
         "join-as-viewer",
-        { streamId, sessionId },
+        { streamId, sessionId, accessToken },
         (result: { ok: boolean; error?: string }) => {
           if (cancelled) {
             return;
@@ -220,6 +220,13 @@ export function useViewerPeer(streamId: string | undefined, enabled = true) {
       scheduleRetry(CONNECT_RETRY_DELAY_MS);
     };
 
+    const onAccessRevoked = () => {
+      failConnection("This private link is no longer valid.");
+      pcRef.current?.close();
+      remoteStreamRef.current = null;
+      setRemoteStream(null);
+    };
+
     const onViewerReplaced = () => {
       failConnection("This viewer session is now active in another tab.");
       pcRef.current?.close();
@@ -251,6 +258,7 @@ export function useViewerPeer(streamId: string | undefined, enabled = true) {
       socket.on("host-disconnected", onHostDisconnected);
       socket.on("host-ready", onHostReady);
       socket.on("viewer-replaced", onViewerReplaced);
+      socket.on("viewer-access-revoked", onAccessRevoked);
       socket.on("viewer-count", onCount);
       socket.on("connect", onConnect);
       socket.on("disconnect", onDisconnect);
@@ -270,6 +278,7 @@ export function useViewerPeer(streamId: string | undefined, enabled = true) {
         socket.off("host-disconnected", onHostDisconnected);
         socket.off("host-ready", onHostReady);
         socket.off("viewer-replaced", onViewerReplaced);
+        socket.off("viewer-access-revoked", onAccessRevoked);
         socket.off("viewer-count", onCount);
         socket.off("connect", onConnect);
         socket.off("disconnect", onDisconnect);
@@ -279,7 +288,7 @@ export function useViewerPeer(streamId: string | undefined, enabled = true) {
       pcRef.current?.close();
       pcRef.current = null;
     };
-  }, [enabled, restartNonce, streamId]);
+  }, [enabled, restartNonce, streamId, accessToken]);
 
   return {
     remoteStream,

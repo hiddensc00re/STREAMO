@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { ownerTokenMatches } from "@/lib/owner-token";
+import { canReadStream } from "@/lib/stream-access";
 import { looksSafeId, sanitizeText } from "@/lib/sanitize";
 import { fileAction, FILE_LIMIT, FILE_SLOTS, playbackPosition } from "@/lib/file-broadcast";
 import { mediaBucket } from "@/lib/storage-server";
@@ -15,9 +16,13 @@ class FileError extends Error {
   constructor(message: string, readonly status = 400) { super(message); }
 }
 
-export async function GET(_request: Request, context: Context) {
+export async function GET(request: Request, context: Context) {
   const { id } = await context.params;
   if (!looksSafeId(id)) return json({ error: "Event not found." }, 404);
+  const stream = await prisma.stream.findUnique({ where: { id } });
+  if (!stream || !canReadStream(stream, request.headers.get("x-stream-access-token"), request.headers.get("authorization")?.replace(/^Bearer /i, "") ?? null)) {
+    return json({ error: "Event not found or private link revoked." }, 404);
+  }
   const file = await prisma.fileBroadcast.findUnique({ where: { streamId: id } });
   if (!file) return json({ file: null });
   const now = Date.now();

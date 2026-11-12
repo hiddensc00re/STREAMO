@@ -12,6 +12,7 @@ export const createStreamSchema = z.object({
   hasVideo: z.boolean(),
   hasAudio: z.boolean(),
   scheduledAt: z.string().datetime().nullable().optional(),
+  isPrivate: z.boolean().default(false),
 });
 
 export const updateStreamSchema = z.object({

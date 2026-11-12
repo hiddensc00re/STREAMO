@@ -10,6 +10,7 @@ export function toPublicStream(stream: Stream): PublicStream {
     hasVideo: stream.hasVideo,
     hasAudio: stream.hasAudio,
     isLive: stream.isLive,
+    isPrivate: stream.isPrivate,
     viewerCount: stream.viewerCount,
     scheduledAt: stream.scheduledAt?.toISOString() ?? null,
     createdAt: stream.createdAt.toISOString(),
