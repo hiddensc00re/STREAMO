@@ -9,7 +9,10 @@ export function ShareEventLink({ streamId, title, isPrivate }: { streamId: strin
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   useEffect(() => {
-    setAccessToken(window.localStorage.getItem(`${ACCESS_TOKEN_STORAGE_PREFIX}${streamId}`) ?? "");
+    const frame = window.requestAnimationFrame(() => {
+      setAccessToken(window.localStorage.getItem(`${ACCESS_TOKEN_STORAGE_PREFIX}${streamId}`) ?? "");
+    });
+    return () => window.cancelAnimationFrame(frame);
   }, [streamId]);
   const path = `/watch/${streamId}${isPrivate && accessToken ? `?access=${encodeURIComponent(accessToken)}` : ""}`;
   const viewerUrl = isPrivate && !accessToken ? "" : typeof window === "undefined" ? path : new URL(path, window.location.origin).toString();
